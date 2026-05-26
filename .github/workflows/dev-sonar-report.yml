@@ -53,12 +53,20 @@ jobs:
 
           $json = Get-Content .\sonar-issues.json -Raw | ConvertFrom-Json
 
-          $json.issues |
-            Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} |
-            Export-Csv .\sonar-issues-report.csv -NoTypeInformation
+          if ($null -eq $json.issues) {
+            Write-Host "No SonarQube issues found."
+            "severity,type,rule,status,line,effort,message,file" | Out-File sonar-issues-report.csv
+          }
+          else {
+            $json.issues |
+              Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} |
+              Export-Csv .\sonar-issues-report.csv -NoTypeInformation
+          }
 
       - name: STEP 6 - Upload CSV report
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: sonar-issues-report
           path: sonar-issues-report.csv
+          if-no-files-found: warn
