@@ -3,11 +3,11 @@ name: Dev SonarQube Scan and Report
 on:
   push:
     branches:
-      - dev
+      - dev2
 
   pull_request:
     branches:
-      - dev
+      - dev2
     types:
       - closed
 
