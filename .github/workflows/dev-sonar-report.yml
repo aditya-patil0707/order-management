@@ -6,18 +6,9 @@ on:
   push:
     branches:
       - main
-      - main
-
-  pull_request:
-    branches:
-      - main
-    types:
-      - closed
 
 jobs:
   sonar-report:
-    if: github.event_name == 'push' || github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-
     runs-on: self-hosted
 
     steps:
