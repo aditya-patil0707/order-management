@@ -22,6 +22,15 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    private static final String ROLE_ADMIN = "ADMIN";
+    private static final String ROLE_MANAGER = "MANAGER";
+    private static final String ROLE_CUSTOMER = "CUSTOMER";
+
+    private static final String PRODUCTS_API = "/api/v1/products/**";
+    private static final String INVENTORY_API = "/api/v1/inventory/**";
+    private static final String ORDERS_API = "/api/v1/orders/**";
+    private static final String PAYMENTS_API = "/api/v1/payments/**";
+
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomUserDetailsService customUserDetailsService;
 
@@ -37,40 +46,36 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
-                        // auth APIs
                         .requestMatchers("/api/auth/register").permitAll()
                         .requestMatchers("/api/auth/login").permitAll()
 
-                        // swagger APIs
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
 
-                        // future product module
-                        .requestMatchers(HttpMethod.GET, "/api/v1/products/**")
-                        .hasAnyRole("ADMIN", "MANAGER", "CUSTOMER")
+                        .requestMatchers(HttpMethod.GET, PRODUCTS_API)
+                        .hasAnyRole(ROLE_ADMIN, ROLE_MANAGER, ROLE_CUSTOMER)
 
-                        .requestMatchers(HttpMethod.POST, "/api/v1/products/**")
-                        .hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(HttpMethod.POST, PRODUCTS_API)
+                        .hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
 
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/products/**")
-                        .hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(HttpMethod.PUT, PRODUCTS_API)
+                        .hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
 
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/products/**")
-                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, PRODUCTS_API)
+                        .hasRole(ROLE_ADMIN)
 
-                        .requestMatchers("/api/v1/inventory/**")
-                        .hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(INVENTORY_API)
+                        .hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
 
-                        .requestMatchers("/api/v1/orders/**")
-                        .hasAnyRole("ADMIN", "MANAGER", "CUSTOMER")
+                        .requestMatchers(ORDERS_API)
+                        .hasAnyRole(ROLE_ADMIN, ROLE_MANAGER, ROLE_CUSTOMER)
 
-                        .requestMatchers("/api/v1/payments/**")
-                        .hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(PAYMENTS_API)
+                        .hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
 
-                        // everything else
                         .anyRequest()
                         .authenticated()
                 )
