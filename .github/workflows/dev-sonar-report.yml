@@ -5,8 +5,16 @@ on:
     branches:
       - dev
 
+  pull_request:
+    branches:
+      - dev
+    types:
+      - closed
+
 jobs:
   sonar-report:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+
     runs-on: self-hosted
 
     steps:
@@ -20,7 +28,6 @@ jobs:
           java-version: '21'
 
       - name: STEP 3 - Build and run SonarQube scan
-        shell: powershell
         run: |
           mvn clean verify sonar:sonar `
             "-Dsonar.projectKey=ordermanagement" `
@@ -28,17 +35,14 @@ jobs:
             "-Dsonar.token=${{ secrets.SONAR_TOKEN }}"
 
       - name: STEP 4 - Export Sonar issues JSON
-        shell: powershell
         run: |
-          curl.exe -u "${{ secrets.SONAR_TOKEN }}:" "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&resolved=false" -o sonar-issues.json
+          curl.exe -u "${{ secrets.SONAR_TOKEN }}:" "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement" -o sonar-issues.json
 
       - name: STEP 5 - Convert JSON to CSV report
         shell: powershell
         run: |
           $json = Get-Content .\sonar-issues.json -Raw | ConvertFrom-Json
-          $json.issues |
-          Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} |
-          Export-Csv .\sonar-issues-report.csv -NoTypeInformation
+          $json.issues | Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} | Export-Csv .\sonar-issues-report.csv -NoTypeInformation
 
       - name: STEP 6 - Upload CSV report
         uses: actions/upload-artifact@v4
