@@ -15,57 +15,34 @@ jobs:
   sonar-report:
     if: github.event_name == 'push' || github.event.pull_request.merged == true
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: STEP 1 - Checkout code
         uses: actions/checkout@v4
 
-      - name: STEP 2 - Setup Java 17
+      - name: STEP 2 - Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: STEP 3 - Build and run SonarQube scan
         run: |
-          mvn clean verify sonar:sonar \
-            -Dsonar.projectKey=ordermanagement \
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+          mvn clean verify sonar:sonar `
+            "-Dsonar.projectKey=ordermanagement" `
+            "-Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}" `
+            "-Dsonar.token=${{ secrets.SONAR_TOKEN }}"
 
       - name: STEP 4 - Export Sonar issues JSON
         run: |
-          curl -u "${{ secrets.SONAR_TOKEN }}:" \
-          "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement" \
-          -o sonar-issues.json
+          curl.exe -u "${{ secrets.SONAR_TOKEN }}:" "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement" -o sonar-issues.json
 
       - name: STEP 5 - Convert JSON to CSV report
+        shell: powershell
         run: |
-          python - << 'PY'
-          import json, csv
-
-          with open("sonar-issues.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
-
-          issues = data.get("issues", [])
-
-          with open("sonar-issues-report.csv", "w", newline="", encoding="utf-8") as f:
-              writer = csv.writer(f)
-              writer.writerow(["severity", "type", "rule", "status", "line", "effort", "message", "file"])
-
-              for issue in issues:
-                  writer.writerow([
-                      issue.get("severity", ""),
-                      issue.get("type", ""),
-                      issue.get("rule", ""),
-                      issue.get("status", ""),
-                      issue.get("line", ""),
-                      issue.get("effort", ""),
-                      issue.get("message", ""),
-                      issue.get("component", "").replace("ordermanagement:", "")
-                  ])
-          PY
+          $json = Get-Content .\sonar-issues.json -Raw | ConvertFrom-Json
+          $json.issues | Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} | Export-Csv .\sonar-issues-report.csv -NoTypeInformation
 
       - name: STEP 6 - Upload CSV report
         uses: actions/upload-artifact@v4
