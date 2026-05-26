@@ -1,6 +1,8 @@
 name: Dev SonarQube Scan and Report
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
       - dev
@@ -13,7 +15,7 @@ on:
 
 jobs:
   sonar-report:
-    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    if: github.event_name == 'push' || github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
 
     runs-on: self-hosted
 
@@ -28,6 +30,7 @@ jobs:
           java-version: '21'
 
       - name: STEP 3 - Build and run SonarQube scan
+        shell: powershell
         run: |
           mvn clean verify sonar:sonar `
             "-Dsonar.projectKey=ordermanagement" `
@@ -35,6 +38,7 @@ jobs:
             "-Dsonar.token=${{ secrets.SONAR_TOKEN }}"
 
       - name: STEP 4 - Export unresolved Sonar issues JSON
+        shell: powershell
         run: |
           curl.exe -u "${{ secrets.SONAR_TOKEN }}:" "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&resolved=false" -o sonar-issues.json
 
