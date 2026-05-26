@@ -27,22 +27,35 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: STEP 3 - Build and run SonarQube scan
+      - name: STEP 3 - Run Maven build and SonarQube scan
+        shell: powershell
         run: |
+          Write-Host "Running Maven build and SonarQube scan..."
+
           mvn clean verify sonar:sonar `
             "-Dsonar.projectKey=ordermanagement" `
             "-Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}" `
             "-Dsonar.token=${{ secrets.SONAR_TOKEN }}"
 
-      - name: STEP 4 - Export Sonar issues JSON
+      - name: STEP 4 - Export SonarQube issues into JSON
+        shell: powershell
         run: |
-          curl.exe -u "${{ secrets.SONAR_TOKEN }}:" "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement" -o sonar-issues.json
+          Write-Host "Exporting SonarQube issues..."
+
+          curl.exe -u "${{ secrets.SONAR_TOKEN }}:" `
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement" `
+            -o sonar-issues.json
 
       - name: STEP 5 - Convert JSON to CSV report
         shell: powershell
         run: |
+          Write-Host "Converting JSON to CSV..."
+
           $json = Get-Content .\sonar-issues.json -Raw | ConvertFrom-Json
-          $json.issues | Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} | Export-Csv .\sonar-issues-report.csv -NoTypeInformation
+
+          $json.issues |
+            Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} |
+            Export-Csv .\sonar-issues-report.csv -NoTypeInformation
 
       - name: STEP 6 - Upload CSV report
         uses: actions/upload-artifact@v4
