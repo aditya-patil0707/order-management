@@ -2,7 +2,6 @@
 -- INVENTORY TABLE
 -- =========================
 
-
 CREATE TABLE IF NOT EXISTS inventory
 (
     inventory_id BIGINT NOT NULL,
