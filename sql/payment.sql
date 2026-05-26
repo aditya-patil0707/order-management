@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS payments
         REFERENCES orders(order_id)
 );
 
-
 CREATE SEQUENCE IF NOT EXISTS payments_seq
     START WITH 1
     INCREMENT BY 1
