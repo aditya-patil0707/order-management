@@ -54,4 +54,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sonar-issues-report-${{ github.run_number }}
-          path: sonar-issues-report.csv
+          path: sonar-report-output/sonar-issues-report.csv
