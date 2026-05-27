@@ -35,10 +35,43 @@ jobs:
             "-Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}" `
             "-Dsonar.token=${{ secrets.SONAR_TOKEN }}"
 
-      - name: STEP 4 - Export Sonar issues JSON
+      - name: STEP 4 - Wait for SonarQube background task
+        shell: powershell
+        run: |
+          $reportFile = "target\sonar\report-task.txt"
+
+          if (!(Test-Path $reportFile)) {
+            Write-Host "report-task.txt not found"
+            exit 1
+          }
+
+          $ceTaskId = Select-String -Path $reportFile -Pattern "ceTaskId=" | ForEach-Object {
+            $_.Line.Replace("ceTaskId=", "")
+          }
+
+          Write-Host "Sonar CE Task ID: $ceTaskId"
+
+          do {
+            Start-Sleep -Seconds 5
+
+            $taskResponse = curl.exe -s -u "${{ secrets.SONAR_TOKEN }}:" `
+              "${{ secrets.SONAR_HOST_URL }}/api/ce/task?id=$ceTaskId" | ConvertFrom-Json
+
+            $status = $taskResponse.task.status
+            Write-Host "Sonar task status: $status"
+
+          } while ($status -eq "PENDING" -or $status -eq "IN_PROGRESS")
+
+          if ($status -ne "SUCCESS") {
+            Write-Host "SonarQube analysis failed with status: $status"
+            exit 1
+          }
+
+      - name: STEP 5 - Export latest Sonar issues JSON
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path .\sonar-report-output
+
           Remove-Item .\sonar-report-output\sonar-issues.json -ErrorAction SilentlyContinue
           Remove-Item .\sonar-report-output\sonar-issues-report.csv -ErrorAction SilentlyContinue
 
@@ -46,12 +79,12 @@ jobs:
             "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&ps=500" `
             -o .\sonar-report-output\sonar-issues.json
 
-      - name: STEP 5 - Convert JSON to CSV report
+      - name: STEP 6 - Convert JSON to CSV report
         shell: powershell
         run: |
           $json = Get-Content .\sonar-report-output\sonar-issues.json -Raw | ConvertFrom-Json
 
-          Write-Host "Total Sonar issues:"
+          Write-Host "Latest Sonar issue count:"
           Write-Host $json.total
 
           $json.issues |
@@ -60,7 +93,7 @@ jobs:
 
           Get-ChildItem .\sonar-report-output
 
-      - name: STEP 6 - Upload CSV report
+      - name: STEP 7 - Upload CSV report
         uses: actions/upload-artifact@v4
         with:
           name: sonar-issues-report-${{ github.run_number }}
