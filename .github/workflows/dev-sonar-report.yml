@@ -53,5 +53,5 @@ jobs:
       - name: STEP 6 - Upload CSV report
         uses: actions/upload-artifact@v4
         with:
-          name: sonar-issues-report
+          name: sonar-issues-report-${{ github.run_number }}
           path: sonar-issues-report.csv
