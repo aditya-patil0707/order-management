@@ -38,17 +38,27 @@ jobs:
       - name: STEP 4 - Export Sonar issues JSON
         shell: powershell
         run: |
+          New-Item -ItemType Directory -Force -Path .\sonar-report-output
+          Remove-Item .\sonar-report-output\sonar-issues.json -ErrorAction SilentlyContinue
+          Remove-Item .\sonar-report-output\sonar-issues-report.csv -ErrorAction SilentlyContinue
+
           curl.exe -u "${{ secrets.SONAR_TOKEN }}:" `
-            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement" `
-            -o sonar-issues.json
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&ps=500" `
+            -o .\sonar-report-output\sonar-issues.json
 
       - name: STEP 5 - Convert JSON to CSV report
         shell: powershell
         run: |
-          $json = Get-Content .\sonar-issues.json -Raw | ConvertFrom-Json
+          $json = Get-Content .\sonar-report-output\sonar-issues.json -Raw | ConvertFrom-Json
+
+          Write-Host "Total Sonar issues:"
+          Write-Host $json.total
+
           $json.issues |
             Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} |
-            Export-Csv .\sonar-issues-report.csv -NoTypeInformation
+            Export-Csv .\sonar-report-output\sonar-issues-report.csv -NoTypeInformation -Force
+
+          Get-ChildItem .\sonar-report-output
 
       - name: STEP 6 - Upload CSV report
         uses: actions/upload-artifact@v4
