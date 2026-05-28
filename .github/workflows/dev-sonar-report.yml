@@ -78,7 +78,7 @@ jobs:
             "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&ps=100" `
             -o .\sonar-report-output\sonar-issues.json
 
-      - name: STEP 6 - Convert JSON to CSV report with Gemini AI solution
+      - name: STEP 6 - Convert JSON to CSV report with Groq AI solution
         shell: powershell
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -96,6 +96,8 @@ jobs:
           Write-Host $json.total
 
           $report = @()
+          $aiCount = 0
+          $aiLimit = 3
 
           foreach ($issue in $json.issues) {
 
@@ -113,65 +115,72 @@ jobs:
               "Message: $($issue.message)"
             ) -join "`n"
 
-            $body = @{
-              contents = @(
-                @{
-                  parts = @(
-                    @{
-                      text = $prompt
-                    }
-                  )
-                }
-              )
-              generationConfig = @{
+            $aiSolution = "AI not generated for this row. Demo limit is 3 issues."
+
+            if ($aiCount -lt $aiLimit) {
+
+              $body = @{
+                model = "llama-3.1-8b-instant"
+                messages = @(
+                  @{
+                    role = "system"
+                    content = "You are a Java Spring Boot code reviewer. Give short actionable fixes only."
+                  },
+                  @{
+                    role = "user"
+                    content = $prompt
+                  }
+                )
                 temperature = 0.2
-                maxOutputTokens = 120
+                max_tokens = 120
+              } | ConvertTo-Json -Depth 10
+
+              try {
+                $aiResponse = Invoke-RestMethod `
+                  -Uri "https://api.groq.com/openai/v1/chat/completions" `
+                  -Method Post `
+                  -Headers @{
+                    "Authorization" = "Bearer $env:OPENAI_API_KEY"
+                    "Content-Type"  = "application/json"
+                  } `
+                  -Body $body
+
+                $aiSolution = $aiResponse.choices[0].message.content
+                $aiCount++
+
+                Start-Sleep -Seconds 2
               }
-            } | ConvertTo-Json -Depth 10
+              catch {
+                Write-Host "========== GROQ API ERROR =========="
 
-            try {
-              $geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$env:OPENAI_API_KEY"
+                if ($_.Exception.Response -ne $null) {
+                  Write-Host "Status Code:" $_.Exception.Response.StatusCode.value__
 
-              $aiResponse = Invoke-RestMethod `
-                -Uri $geminiUrl `
-                -Method Post `
-                -Headers @{
-                  "Content-Type" = "application/json"
-                } `
-                -Body $body
+                  try {
+                    $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                    $errorBody = $reader.ReadToEnd()
 
-              $aiSolution = $aiResponse.candidates[0].content.parts[0].text
-            }
-            catch {
-              Write-Host "========== GEMINI API ERROR =========="
+                    Write-Host "Groq Error Body:"
+                    Write-Host $errorBody
 
-              if ($_.Exception.Response -ne $null) {
-                Write-Host "Status Code:" $_.Exception.Response.StatusCode.value__
+                    $aiSolution = "AI ERROR: $errorBody"
+                  }
+                  catch {
+                    Write-Host "Could not read Groq error body."
+                    Write-Host $_.Exception.Message
 
-                try {
-                  $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-                  $errorBody = $reader.ReadToEnd()
-
-                  Write-Host "Gemini Error Body:"
-                  Write-Host $errorBody
-
-                  $aiSolution = "AI ERROR: $errorBody"
+                    $aiSolution = "AI ERROR: $($_.Exception.Message)"
+                  }
                 }
-                catch {
-                  Write-Host "Could not read Gemini error body."
+                else {
+                  Write-Host "Raw Error:"
                   Write-Host $_.Exception.Message
 
                   $aiSolution = "AI ERROR: $($_.Exception.Message)"
                 }
-              }
-              else {
-                Write-Host "Raw Error:"
-                Write-Host $_.Exception.Message
 
-                $aiSolution = "AI ERROR: $($_.Exception.Message)"
+                Write-Host "=================================="
               }
-
-              Write-Host "====================================="
             }
 
             $report += [PSCustomObject]@{
