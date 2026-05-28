@@ -14,7 +14,6 @@ on:
 jobs:
   sonar-report:
     if: github.event_name == 'push' || github.event.pull_request.merged == true
-
     runs-on: self-hosted
 
     steps:
@@ -79,7 +78,7 @@ jobs:
             "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&ps=100" `
             -o .\sonar-report-output\sonar-issues.json
 
-      - name: STEP 6 - Convert JSON to CSV report with AI solution
+      - name: STEP 6 - Convert JSON to CSV report with Gemini AI solution
         shell: powershell
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -89,7 +88,7 @@ jobs:
             exit 1
           }
 
-          Write-Host "OPENAI_API_KEY is available."
+          Write-Host "API key is available."
 
           $json = Get-Content .\sonar-report-output\sonar-issues.json -Raw | ConvertFrom-Json
 
@@ -103,9 +102,9 @@ jobs:
             $file = $issue.component -replace '^ordermanagement:', ''
 
             $prompt = @(
+              "You are a Java Spring Boot code reviewer."
               "Give a short practical fix for this SonarQube issue."
               "Keep answer within 2 lines."
-              "Project: Java Spring Boot"
               "Severity: $($issue.severity)"
               "Type: $($issue.type)"
               "Rule: $($issue.rule)"
@@ -115,68 +114,64 @@ jobs:
             ) -join "`n"
 
             $body = @{
-              model = "gpt-4o-mini"
-              messages = @(
+              contents = @(
                 @{
-                  role = "system"
-                  content = "You are a Java Spring Boot code reviewer. Give short actionable fixes only."
-                },
-                @{
-                  role = "user"
-                  content = $prompt
+                  parts = @(
+                    @{
+                      text = $prompt
+                    }
+                  )
                 }
               )
-              temperature = 0.2
-              max_tokens = 120
+              generationConfig = @{
+                temperature = 0.2
+                maxOutputTokens = 120
+              }
             } | ConvertTo-Json -Depth 10
 
             try {
+              $geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$env:OPENAI_API_KEY"
 
               $aiResponse = Invoke-RestMethod `
-                -Uri "https://api.openai.com/v1/chat/completions" `
+                -Uri $geminiUrl `
                 -Method Post `
                 -Headers @{
-                  "Authorization" = "Bearer $env:OPENAI_API_KEY"
-                  "Content-Type"  = "application/json"
+                  "Content-Type" = "application/json"
                 } `
                 -Body $body
 
-              $aiSolution = $aiResponse.choices[0].message.content
+              $aiSolution = $aiResponse.candidates[0].content.parts[0].text
             }
             catch {
-
-              Write-Host "========== OPENAI API ERROR =========="
+              Write-Host "========== GEMINI API ERROR =========="
 
               if ($_.Exception.Response -ne $null) {
-
                 Write-Host "Status Code:" $_.Exception.Response.StatusCode.value__
 
                 try {
                   $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
                   $errorBody = $reader.ReadToEnd()
 
-                  Write-Host "OpenAI Error Body:"
+                  Write-Host "Gemini Error Body:"
                   Write-Host $errorBody
 
                   $aiSolution = "AI ERROR: $errorBody"
                 }
                 catch {
-                  Write-Host "Could not read OpenAI error body."
+                  Write-Host "Could not read Gemini error body."
                   Write-Host $_.Exception.Message
 
                   $aiSolution = "AI ERROR: $($_.Exception.Message)"
                 }
-
               }
               else {
-
                 Write-Host "Raw Error:"
                 Write-Host $_.Exception.Message
 
                 $aiSolution = "AI ERROR: $($_.Exception.Message)"
               }
 
-              Write-Host "======================================"
+              Write-Host "====================================="
             }
 
             $report += [PSCustomObject]@{
