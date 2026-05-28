@@ -2,8 +2,6 @@ package com.example.ordermanagement.product.service;
 
 import com.example.ordermanagement.product.dto.request.ProductRequest;
 import com.example.ordermanagement.util.CommonResponse;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 
 public interface ProductService {
