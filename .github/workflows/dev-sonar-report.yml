@@ -1,4 +1,4 @@
-name: Dev SonarQube Scan and Report
+name: Dev SonarQube Scan and AI Report
 
 on:
   push:
@@ -16,6 +16,9 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.merged == true
 
     runs-on: self-hosted
+
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
     steps:
       - name: STEP 1 - Checkout code
@@ -76,10 +79,10 @@ jobs:
           Remove-Item .\sonar-report-output\sonar-issues-report.csv -ErrorAction SilentlyContinue
 
           curl.exe -u "${{ secrets.SONAR_TOKEN }}:" `
-            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&ps=500" `
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=ordermanagement&ps=100" `
             -o .\sonar-report-output\sonar-issues.json
 
-      - name: STEP 6 - Convert JSON to CSV report
+      - name: STEP 6 - Convert JSON to CSV report with AI solution
         shell: powershell
         run: |
           $json = Get-Content .\sonar-report-output\sonar-issues.json -Raw | ConvertFrom-Json
@@ -87,14 +90,74 @@ jobs:
           Write-Host "Latest Sonar issue count:"
           Write-Host $json.total
 
-          $json.issues |
-            Select-Object severity,type,rule,status,line,effort,message,@{Name="file";Expression={$_.component -replace '^ordermanagement:',''}} |
-            Export-Csv .\sonar-report-output\sonar-issues-report.csv -NoTypeInformation -Force
+          $report = @()
+
+          foreach ($issue in $json.issues) {
+            $file = $issue.component -replace '^ordermanagement:', ''
+
+            $prompt = @"
+          Give a short practical fix for this SonarQube issue.
+          Keep answer within 2 lines.
+          Project: Java Spring Boot
+          Severity: $($issue.severity)
+          Type: $($issue.type)
+          Rule: $($issue.rule)
+          File: $file
+          Line: $($issue.line)
+          Message: $($issue.message)
+          "@
+
+            $body = @{
+              model = "gpt-4o-mini"
+              messages = @(
+                @{
+                  role = "system"
+                  content = "You are a Java Spring Boot code reviewer. Give short actionable fixes only."
+                },
+                @{
+                  role = "user"
+                  content = $prompt
+                }
+              )
+              temperature = 0.2
+              max_tokens = 120
+            } | ConvertTo-Json -Depth 5
+
+            try {
+              $aiResponse = Invoke-RestMethod `
+                -Uri "https://api.openai.com/v1/chat/completions" `
+                -Method Post `
+                -Headers @{
+                  "Authorization" = "Bearer $env:OPENAI_API_KEY"
+                  "Content-Type" = "application/json"
+                } `
+                -Body $body
+
+              $aiSolution = $aiResponse.choices[0].message.content
+            }
+            catch {
+              $aiSolution = "AI solution generation failed. Check OPENAI_API_KEY or API access."
+            }
+
+            $report += [PSCustomObject]@{
+              severity = $issue.severity
+              type = $issue.type
+              rule = $issue.rule
+              status = $issue.status
+              line = $issue.line
+              effort = $issue.effort
+              message = $issue.message
+              file = $file
+              aiSolution = $aiSolution
+            }
+          }
+
+          $report | Export-Csv .\sonar-report-output\sonar-issues-report.csv -NoTypeInformation -Force
 
           Get-ChildItem .\sonar-report-output
 
       - name: STEP 7 - Upload CSV report
         uses: actions/upload-artifact@v4
         with:
-          name: sonar-issues-report-${{ github.run_number }}
+          name: sonar-ai-issues-report-${{ github.run_number }}
           path: sonar-report-output/sonar-issues-report.csv
