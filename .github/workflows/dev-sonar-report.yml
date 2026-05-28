@@ -97,7 +97,7 @@ jobs:
 
           $report = @()
           $aiCount = 0
-          $aiLimit = 3
+          $aiLimit = 5
 
           foreach ($issue in $json.issues) {
 
