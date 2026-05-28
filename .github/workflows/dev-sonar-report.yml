@@ -17,9 +17,6 @@ jobs:
 
     runs-on: self-hosted
 
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
     steps:
       - name: STEP 1 - Checkout code
         uses: actions/checkout@v4
@@ -44,7 +41,7 @@ jobs:
           $reportFile = "target\sonar\report-task.txt"
 
           if (!(Test-Path $reportFile)) {
-            Write-Host "report-task.txt not found"
+            Write-Error "report-task.txt not found"
             exit 1
           }
 
@@ -66,7 +63,7 @@ jobs:
           } while ($status -eq "PENDING" -or $status -eq "IN_PROGRESS")
 
           if ($status -ne "SUCCESS") {
-            Write-Host "SonarQube analysis failed with status: $status"
+            Write-Error "SonarQube analysis failed with status: $status"
             exit 1
           }
 
@@ -84,7 +81,16 @@ jobs:
 
       - name: STEP 6 - Convert JSON to CSV report with AI solution
         shell: powershell
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
+            Write-Error "OPENAI_API_KEY is missing or empty. Check GitHub Secrets."
+            exit 1
+          }
+
+          Write-Host "OPENAI_API_KEY is available."
+
           $json = Get-Content .\sonar-report-output\sonar-issues.json -Raw | ConvertFrom-Json
 
           Write-Host "Latest Sonar issue count:"
@@ -93,19 +99,20 @@ jobs:
           $report = @()
 
           foreach ($issue in $json.issues) {
+
             $file = $issue.component -replace '^ordermanagement:', ''
 
-            $prompt = @"
-          Give a short practical fix for this SonarQube issue.
-          Keep answer within 2 lines.
-          Project: Java Spring Boot
-          Severity: $($issue.severity)
-          Type: $($issue.type)
-          Rule: $($issue.rule)
-          File: $file
-          Line: $($issue.line)
-          Message: $($issue.message)
-          "@
+            $prompt = @(
+              "Give a short practical fix for this SonarQube issue."
+              "Keep answer within 2 lines."
+              "Project: Java Spring Boot"
+              "Severity: $($issue.severity)"
+              "Type: $($issue.type)"
+              "Rule: $($issue.rule)"
+              "File: $file"
+              "Line: $($issue.line)"
+              "Message: $($issue.message)"
+            ) -join "`n"
 
             $body = @{
               model = "gpt-4o-mini"
@@ -121,38 +128,73 @@ jobs:
               )
               temperature = 0.2
               max_tokens = 120
-            } | ConvertTo-Json -Depth 5
+            } | ConvertTo-Json -Depth 10
 
             try {
+
               $aiResponse = Invoke-RestMethod `
                 -Uri "https://api.openai.com/v1/chat/completions" `
                 -Method Post `
                 -Headers @{
                   "Authorization" = "Bearer $env:OPENAI_API_KEY"
-                  "Content-Type" = "application/json"
+                  "Content-Type"  = "application/json"
                 } `
                 -Body $body
 
               $aiSolution = $aiResponse.choices[0].message.content
             }
             catch {
-              $aiSolution = "AI solution generation failed. Check OPENAI_API_KEY or API access."
+
+              Write-Host "========== OPENAI API ERROR =========="
+
+              if ($_.Exception.Response -ne $null) {
+
+                Write-Host "Status Code:" $_.Exception.Response.StatusCode.value__
+
+                try {
+                  $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                  $errorBody = $reader.ReadToEnd()
+
+                  Write-Host "OpenAI Error Body:"
+                  Write-Host $errorBody
+
+                  $aiSolution = "AI ERROR: $errorBody"
+                }
+                catch {
+                  Write-Host "Could not read OpenAI error body."
+                  Write-Host $_.Exception.Message
+
+                  $aiSolution = "AI ERROR: $($_.Exception.Message)"
+                }
+
+              }
+              else {
+
+                Write-Host "Raw Error:"
+                Write-Host $_.Exception.Message
+
+                $aiSolution = "AI ERROR: $($_.Exception.Message)"
+              }
+
+              Write-Host "======================================"
             }
 
             $report += [PSCustomObject]@{
-              severity = $issue.severity
-              type = $issue.type
-              rule = $issue.rule
-              status = $issue.status
-              line = $issue.line
-              effort = $issue.effort
-              message = $issue.message
-              file = $file
+              severity   = $issue.severity
+              type       = $issue.type
+              rule       = $issue.rule
+              status     = $issue.status
+              line       = $issue.line
+              effort     = $issue.effort
+              message    = $issue.message
+              file       = $file
               aiSolution = $aiSolution
             }
           }
 
-          $report | Export-Csv .\sonar-report-output\sonar-issues-report.csv -NoTypeInformation -Force
+          $report | Export-Csv .\sonar-report-output\sonar-issues-report.csv `
+            -NoTypeInformation `
+            -Force
 
           Get-ChildItem .\sonar-report-output
 
